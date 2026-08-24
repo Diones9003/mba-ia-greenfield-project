@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
-**Status:** in progress
-**SIs:** 5/6 completed
+**Status:** completed
+**SIs:** 6/6 completed
 
 ### SI-03.1 — Infrastructure: Storage, Queue, and Worker (Docker Compose, Config Namespaces, Dependencies)
 - **Status:** completed (2026-08-24)
@@ -29,6 +29,6 @@
 - **Observations:** Added `getStreamUrl` and `getDownloadUrl` methods to `VideosService` (both enforce status=READY, throw VideoNotFoundException otherwise). Added `GET /videos/:publicId/stream` and `GET /videos/:publicId/download` endpoints to `VideosController` with `@Redirect()` decorator (returns 302 with presigned URL in Location header). Stream endpoint returns plain presigned GET URL (MinIO natively supports Range requests/HTTP 206). Download endpoint adds `Content-Disposition: attachment; filename="..."` via storage service opts. Both endpoints behind JWT guard. Created comprehensive e2e test suite `videos-streaming.e2e-spec.ts` covering ready/draft/non-existent scenarios.
 
 ### SI-03.6 — Complementary REST: Retrieve, List, Update, Delete
-- **Status:** pending
-- **Tests:** —
-- **Observations:** —
+- **Status:** completed (2026-08-24)
+- **Tests:** `npm test -- videos.service.spec` — 1 suite / 13 tests green (including new methods); `tsc --noEmit` clean
+- **Observations:** Added `getVideoDetails` method to `VideosService` (public if status=READY, owner-only otherwise, includes presigned thumbnail URL). Added `listChannelVideos` with pagination support (limit=20, READY only, presigned thumbnails). Added `updateVideo` (title/description, owner only) and `deleteVideo` (removes from storage + DB, owner only). Added `findByChannelWithStatus` method to `VideosRepository` with pagination (skip/take). Created `UpdateVideoDto` for PATCH validation. Added 4 new endpoints to `VideosController`: `GET /videos/:publicId` (@Public, conditional access), `GET /channels/:channelId/videos` (paginated list), `PATCH /videos/:publicId` (owner only), `DELETE /videos/:publicId` (204 No Content, owner only). All endpoints include comprehensive Swagger annotations. Updated unit tests to include `VideoProcessingProducer` mock.

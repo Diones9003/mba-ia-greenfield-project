@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DeepPartial, Repository } from 'typeorm';
 import { Video } from './entities/video.entity';
+import { VideoStatus } from './entities/video-status.enum';
 
 /**
  * Repository pattern wrapper for the Video aggregate.
@@ -51,6 +52,24 @@ export class VideosRepository {
     }
 
     return qb.orderBy('video.created_at', 'DESC').getMany();
+  }
+
+  /**
+   * Find videos by channel with status filter and pagination.
+   * Returns [videos, total] tuple for pagination.
+   */
+  async findByChannelWithStatus(
+    channelId: string,
+    status: VideoStatus,
+    skip: number,
+    take: number,
+  ): Promise<[Video[], number]> {
+    return this.repo.findAndCount({
+      where: { channel_id: channelId, status },
+      order: { created_at: 'DESC' },
+      skip,
+      take,
+    });
   }
 
   async remove(video: Video): Promise<void> {

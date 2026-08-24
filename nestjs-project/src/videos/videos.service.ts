@@ -252,6 +252,112 @@ export class VideosService {
     );
   }
 
+  /**
+   * Get video details by public ID.
+   * Public if status=READY, owner-only otherwise.
+   */
+  async getVideoDetails(
+    userId: string | null,
+    publicId: string,
+  ): Promise<VideoResponseDto> {
+    const video = await this.videosRepository.findByPublicId(publicId);
+    if (!video) {
+      throw new VideoNotFoundException();
+    }
+
+    // If not READY, only owner can access
+    if (video.status !== VideoStatus.READY) {
+      if (!userId) {
+        throw new VideoNotFoundException();
+      }
+      const channel = await this.channelsService.findById(video.channel_id);
+      if (!channel || channel.user_id !== userId) {
+        throw new VideoNotFoundException();
+      }
+    }
+
+    const thumbnailUrl = video.thumbnail_key
+      ? await this.storageService.getPresignedGetUrl(
+          video.thumbnail_key,
+          this.uploadCfg.presignTtlSeconds,
+        )
+      : undefined;
+
+    return VideoResponseDto.fromEntity(video, { thumbnailUrl });
+  }
+
+  /**
+   * List videos for a channel (paginated, READY only).
+   */
+  async listChannelVideos(
+    channelId: string,
+    page = 1,
+    limit = 20,
+  ): Promise<{ videos: VideoResponseDto[]; total: number }> {
+    const skip = (page - 1) * limit;
+    const [videos, total] = await this.videosRepository.findByChannelWithStatus(
+      channelId,
+      VideoStatus.READY,
+      skip,
+      limit,
+    );
+
+    const videosWithThumbnails = await Promise.all(
+      videos.map(async (v) => {
+        const thumbnailUrl = v.thumbnail_key
+          ? await this.storageService.getPresignedGetUrl(
+              v.thumbnail_key,
+              this.uploadCfg.presignTtlSeconds,
+            )
+          : undefined;
+        return VideoResponseDto.fromEntity(v, { thumbnailUrl });
+      }),
+    );
+
+    return { videos: videosWithThumbnails, total };
+  }
+
+  /**
+   * Update video metadata (title, description).
+   * Owner only.
+   */
+  async updateVideo(
+    userId: string,
+    publicId: string,
+    updates: { title?: string; description?: string },
+  ): Promise<VideoResponseDto> {
+    const video = await this.loadOwnedVideo(userId, publicId);
+
+    if (updates.title !== undefined) {
+      video.title = updates.title;
+    }
+    if (updates.description !== undefined) {
+      video.description = updates.description;
+    }
+
+    const saved = await this.videosRepository.save(video);
+    return VideoResponseDto.fromEntity(saved);
+  }
+
+  /**
+   * Delete video and its storage files.
+   * Owner only.
+   */
+  async deleteVideo(userId: string, publicId: string): Promise<void> {
+    const video = await this.loadOwnedVideo(userId, publicId);
+
+    // Delete from storage
+    if (video.storage_key) {
+      await this.storageService.deleteObject(video.storage_key);
+    }
+    if (video.thumbnail_key) {
+      await this.storageService.deleteObject(video.thumbnail_key);
+    }
+
+    // Delete from database
+    await this.videosRepository.remove(video);
+  }
+
   /** Load a video by public id and assert the caller owns its channel. */
   private async loadOwnedVideo(
     userId: string,

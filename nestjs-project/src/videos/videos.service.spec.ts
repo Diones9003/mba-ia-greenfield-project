@@ -5,6 +5,7 @@ import { VideosRepository } from './videos.repository';
 import { VideosService } from './videos.service';
 import { ChannelsService } from '../channels/channels.service';
 import { StorageService } from '../storage/storage.service';
+import { VideoProcessingProducer } from './queue/video-processing.producer';
 import uploadConfig from '../config/upload.config';
 import {
   FileTooLargeException,
@@ -62,6 +63,9 @@ describe('VideosService', () => {
         .fn()
         .mockResolvedValue('https://storage/presigned-part'),
     };
+    const queueProducerMock = {
+      addProcessVideoJob: jest.fn().mockResolvedValue(undefined),
+    };
 
     const module = await Test.createTestingModule({
       providers: [
@@ -69,6 +73,7 @@ describe('VideosService', () => {
         { provide: VideosRepository, useValue: repoMock },
         { provide: ChannelsService, useValue: channelsMock },
         { provide: StorageService, useValue: storageMock },
+        { provide: VideoProcessingProducer, useValue: queueProducerMock },
         { provide: uploadConfig.KEY, useValue: uploadCfg },
       ],
     }).compile();

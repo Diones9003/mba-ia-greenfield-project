@@ -1,12 +1,15 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
   Param,
   ParseIntPipe,
+  Patch,
   Post,
+  Query,
   Redirect,
 } from '@nestjs/common';
 import {
@@ -22,7 +25,9 @@ import type { JwtPayload } from '../auth/auth.types';
 import { VideosService } from './videos.service';
 import { InitiateUploadDto } from './dto/initiate-upload.dto';
 import { CompleteUploadDto } from './dto/complete-upload.dto';
+import { UpdateVideoDto } from './dto/update-video.dto';
 import { VideoResponseDto } from './dto/video-response.dto';
+import { Public } from '../auth/decorators/public.decorator';
 
 /**
  * Video upload handshake endpoints (SI-03.3).
@@ -188,5 +193,85 @@ export class VideosController {
   ): Promise<{ url: string }> {
     const url = await this.videosService.getDownloadUrl(user.sub, publicId);
     return { url };
+  }
+
+  @Get(':publicId')
+  @Public()
+  @ApiOperation({
+    summary: 'Get video details',
+    description:
+      'Returns video details. Public if status=READY, owner-only otherwise.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Video details',
+    type: VideoResponseDto,
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Video not found or not accessible',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  async getVideo(
+    @CurrentUser() user: JwtPayload | undefined,
+    @Param('publicId') publicId: string,
+  ): Promise<VideoResponseDto> {
+    return this.videosService.getVideoDetails(user?.sub || null, publicId);
+  }
+
+  @Patch(':publicId')
+  @ApiOperation({
+    summary: 'Update video metadata',
+    description: 'Update video title and/or description. Owner only.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Video updated',
+    type: VideoResponseDto,
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Not the video owner',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Video not found',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  async updateVideo(
+    @CurrentUser() user: JwtPayload,
+    @Param('publicId') publicId: string,
+    @Body() dto: UpdateVideoDto,
+  ): Promise<VideoResponseDto> {
+    return this.videosService.updateVideo(user.sub, publicId, dto);
+  }
+
+  @Delete(':publicId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Delete a video',
+    description:
+      'Deletes a video and its storage files (video + thumbnail). Owner only.',
+  })
+  @ApiResponse({
+    status: 204,
+    description: 'Video deleted successfully',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Not the video owner',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Video not found',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  async deleteVideo(
+    @CurrentUser() user: JwtPayload,
+    @Param('publicId') publicId: string,
+  ): Promise<void> {
+    await this.videosService.deleteVideo(user.sub, publicId);
   }
 }
