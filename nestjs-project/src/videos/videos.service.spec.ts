@@ -48,7 +48,7 @@ describe('VideosService', () => {
   beforeEach(async () => {
     const repoMock: Partial<jest.Mocked<VideosRepository>> = {
       create: jest.fn((data) => data as Video),
-      save: jest.fn((video) => Promise.resolve(video as Video)),
+      save: jest.fn((video) => Promise.resolve(video)),
       findByPublicId: jest.fn().mockResolvedValue(null),
     };
     const channelsMock = { findById: jest.fn() };
@@ -119,9 +119,9 @@ describe('VideosService', () => {
         user_id: 'someone-else',
       } as never);
 
-      await expect(service.initiateUpload(OWNER_ID, dto)).rejects.toBeInstanceOf(
-        NotVideoOwnerException,
-      );
+      await expect(
+        service.initiateUpload(OWNER_ID, dto),
+      ).rejects.toBeInstanceOf(NotVideoOwnerException);
       expect(storage.createMultipartUpload).not.toHaveBeenCalled();
     });
 

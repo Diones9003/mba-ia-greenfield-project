@@ -7,6 +7,7 @@ import { VideosRepository } from './videos.repository';
 import { generatePublicId } from './public-id.util';
 import { ChannelsService } from '../channels/channels.service';
 import { StorageService } from '../storage/storage.service';
+import { VideoProcessingProducer } from './queue/video-processing.producer';
 import uploadConfig from '../config/upload.config';
 import { InitiateUploadDto } from './dto/initiate-upload.dto';
 import { CompleteUploadDto } from './dto/complete-upload.dto';
@@ -47,6 +48,7 @@ export class VideosService {
     private readonly videosRepository: VideosRepository,
     private readonly channelsService: ChannelsService,
     private readonly storageService: StorageService,
+    private readonly videoProcessingProducer: VideoProcessingProducer,
     @Inject(uploadConfig.KEY)
     private readonly uploadCfg: ConfigType<typeof uploadConfig>,
   ) {}
@@ -195,6 +197,13 @@ export class VideosService {
     video.status = VideoStatus.PROCESSING;
     video.upload_id = null;
     const saved = await this.videosRepository.save(video);
+
+    // Emit job for background processing (FFmpeg metadata + thumbnail)
+    await this.videoProcessingProducer.addProcessVideoJob({
+      videoId: saved.id,
+      publicId: saved.public_id,
+      storageKey: saved.storage_key!,
+    });
 
     return VideoResponseDto.fromEntity(saved);
   }

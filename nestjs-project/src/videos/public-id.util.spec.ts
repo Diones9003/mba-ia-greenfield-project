@@ -1,7 +1,4 @@
-import {
-  generatePublicId,
-  PUBLIC_ID_LENGTH,
-} from './public-id.util';
+import { generatePublicId, PUBLIC_ID_LENGTH } from './public-id.util';
 
 describe('generatePublicId', () => {
   it('returns an id of the configured length', () => {

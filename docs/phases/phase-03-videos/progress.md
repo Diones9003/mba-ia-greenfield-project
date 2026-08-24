@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in progress
-**SIs:** 2/6 completed
+**SIs:** 4/6 completed
 
 ### SI-03.1 — Infrastructure: Storage, Queue, and Worker (Docker Compose, Config Namespaces, Dependencies)
 - **Status:** completed (2026-08-24)
@@ -19,9 +19,9 @@
 - **Observations:** Implemented `StorageService` (S3/MinIO multipart: create/presign part URL/complete/abort, presigned GET, put/get/delete) with a separate presign client on the public endpoint. Added `StorageModule`. Extended `VideosService` with `initiateUpload` (ownership + file-size guards, unique `public_id` retry with abort-on-collision, draft pre-registration with `upload_id`), `getPartUploadUrl`, and `completeUpload` (status guards → `processing`). Added `InitiateUploadDto`, `CompleteUploadDto`, `VideoResponseDto`. Added `VideosController` (`POST /videos`, `POST /videos/:publicId/parts/:partNumber/url`, `POST /videos/:publicId/complete`) behind JWT with `@CurrentUser()`. Added domain exceptions (VIDEO_NOT_FOUND, NOT_VIDEO_OWNER, FILE_TOO_LARGE, UPLOAD_NOT_INITIATED, UPLOAD_ALREADY_COMPLETED, INVALID_STATUS_TRANSITION). Hardened shared-DB test isolation: video integration specs now clean via `cleanAllTables` + delete `videos` in `afterAll`; migrations spec drops sequentially (no deadlock).
 
 ### SI-03.4 — Background Processing: BullMQ Queue, Worker Entrypoint, ffprobe + ffmpeg (TD-01/04/05/08)
-- **Status:** pending
-- **Tests:** —
-- **Observations:** —
+- **Status:** completed (2026-08-24)
+- **Tests:** `npm test -- video-processing` — 2 suites / 7 tests green (VideoProcessingProducer unit, VideoProcessingProcessor unit with mocked ffmpeg/storage/fs); `tsc --noEmit` clean; lint clean
+- **Observations:** Created BullMQ queue infrastructure: `video-processing.constants.ts` (queue/job names + `ProcessVideoJobData` interface), `video-processing.producer.ts` (adds jobs with 3-attempt exponential backoff retry policy), `video-processing.module.ts` (registers BullMQ with Redis config). Integrated producer into `VideosService.completeUpload` to emit job after status→PROCESSING. Created isolated worker app in `src/worker/`: `FfmpegService` (child_process wrappers for ffprobe metadata extraction + ffmpeg thumbnail generation), `VideoProcessingProcessor` (BullMQ @Processor consuming jobs: downloads video from storage→/tmp, extracts metadata, generates thumbnail at 10% duration or 5s, uploads thumbnail to storage, updates Video entity with status=READY/duration/thumbnailKey/metadata, cleanup temp files, error handling with status=ERROR + processingError). Created `WorkerModule` (TypeORM + BullMQ consumer + StorageModule, no HTTP server) and `main.worker.ts` bootstrap. Created `Dockerfile.worker` (node:20-alpine + ffmpeg via apk). Updated `compose.yaml`: nestjs-worker service with Dockerfile.worker build, DATABASE_*/S3_*/REDIS_* env vars using service names. All error handling uses type-safe `getErrorMessage`/`getErrorStack` helpers.
 
 ### SI-03.5 — Streaming and Download (Presigned GET, native Range/206) (TD-07)
 - **Status:** pending

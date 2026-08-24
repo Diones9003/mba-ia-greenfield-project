@@ -88,9 +88,8 @@ describe('VideosRepository (integration)', () => {
     const channel = await createChannel();
     await seedVideo(channel.id, 'with-channel');
 
-    const found = await videosRepository.findByPublicIdWithChannel(
-      'with-channel',
-    );
+    const found =
+      await videosRepository.findByPublicIdWithChannel('with-channel');
     expect(found?.channel.id).toBe(channel.id);
   });
 

@@ -109,7 +109,10 @@ describe('Video entity (integration)', () => {
   it('round-trips jsonb metadata', async () => {
     const channel = await createChannel();
     const video = buildVideo(channel.id, 'withmeta');
-    video.metadata = { format: { duration: '12.34' }, streams: [{ codec: 'h264' }] };
+    video.metadata = {
+      format: { duration: '12.34' },
+      streams: [{ codec: 'h264' }],
+    };
     const saved = await videoRepository.save(video);
 
     const reloaded = await videoRepository.findOneByOrFail({ id: saved.id });
