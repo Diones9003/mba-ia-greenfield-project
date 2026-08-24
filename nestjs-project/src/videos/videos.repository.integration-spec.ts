@@ -2,7 +2,10 @@ import { DataSource, Repository } from 'typeorm';
 import { RefreshToken } from '../auth/entities/refresh-token.entity';
 import { VerificationToken } from '../auth/entities/verification-token.entity';
 import { Channel } from '../channels/entities/channel.entity';
-import { createTestDataSource } from '../test/create-test-data-source';
+import {
+  cleanAllTables,
+  createTestDataSource,
+} from '../test/create-test-data-source';
 import { User } from '../users/entities/user.entity';
 import { Video } from './entities/video.entity';
 import { VideoStatus } from './entities/video-status.enum';
@@ -25,13 +28,15 @@ describe('VideosRepository (integration)', () => {
   });
 
   afterAll(async () => {
+    // Remove any rows left by the final test so sibling suites that only clean
+    // the shared token/channel tables are not blocked by orphaned FK rows.
+    await dataSource.query('DELETE FROM "videos"');
     await dataSource.destroy();
   });
 
   beforeEach(async () => {
     await dataSource.query('DELETE FROM "videos"');
-    await dataSource.query('DELETE FROM "channels"');
-    await dataSource.query('DELETE FROM "users"');
+    await cleanAllTables(dataSource);
   });
 
   let counter = 0;

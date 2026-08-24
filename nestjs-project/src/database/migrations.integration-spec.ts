@@ -31,12 +31,25 @@ describe('Database migrations (integration)', () => {
 
     await dataSource.initialize();
 
-    await Promise.all([
-      ...MANAGED_TABLES.map((table) =>
-        dataSource.query(`DROP TABLE IF EXISTS "${table}" CASCADE`),
-      ),
-      dataSource.query(`DROP TABLE IF EXISTS "migrations" CASCADE`),
-    ]);
+    // Drop sequentially (not via Promise.all): concurrent `DROP TABLE ...
+    // CASCADE` statements that touch FK-related objects race and can deadlock
+    // on the shared database.
+    for (const table of MANAGED_TABLES) {
+      await dataSource.query(`DROP TABLE IF EXISTS "${table}" CASCADE`);
+    }
+    await dataSource.query(`DROP TABLE IF EXISTS "migrations" CASCADE`);
+    // Video artifacts are created by sibling suites via `synchronize` and are
+    // not owned by these migrations; drop them so this suite starts from a
+    // clean schema regardless of suite execution order.
+    await dataSource.query(`DROP TABLE IF EXISTS "videos" CASCADE`);
+
+    // Enum types survive `DROP TABLE`, so a leftover type from a `synchronize`
+    // based suite would make `up()` fail with "type already exists". Drop them
+    // explicitly to keep this suite independent of execution order.
+    await dataSource.query(
+      `DROP TYPE IF EXISTS "verification_tokens_type_enum" CASCADE`,
+    );
+    await dataSource.query(`DROP TYPE IF EXISTS "video_status" CASCADE`);
   });
 
   afterAll(async () => {
