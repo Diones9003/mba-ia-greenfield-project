@@ -1,11 +1,13 @@
 import {
   Body,
   Controller,
+  Get,
   HttpCode,
   HttpStatus,
   Param,
   ParseIntPipe,
   Post,
+  Redirect,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -136,5 +138,55 @@ export class VideosController {
     @Body() dto: CompleteUploadDto,
   ): Promise<VideoResponseDto> {
     return this.videosService.completeUpload(user.sub, publicId, dto);
+  }
+
+  @Get(':publicId/stream')
+  @Redirect()
+  @ApiOperation({
+    summary: 'Stream a video',
+    description:
+      'Returns a redirect (302) to a presigned GET URL for streaming. ' +
+      'Storage natively supports Range requests (HTTP 206 Partial Content).',
+  })
+  @ApiResponse({
+    status: 302,
+    description: 'Redirect to presigned streaming URL',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Video not found or not ready',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  async streamVideo(
+    @CurrentUser() user: JwtPayload,
+    @Param('publicId') publicId: string,
+  ): Promise<{ url: string }> {
+    const url = await this.videosService.getStreamUrl(user.sub, publicId);
+    return { url };
+  }
+
+  @Get(':publicId/download')
+  @Redirect()
+  @ApiOperation({
+    summary: 'Download a video',
+    description:
+      'Returns a redirect (302) to a presigned GET URL with ' +
+      'Content-Disposition: attachment for downloading.',
+  })
+  @ApiResponse({
+    status: 302,
+    description: 'Redirect to presigned download URL',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Video not found or not ready',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  async downloadVideo(
+    @CurrentUser() user: JwtPayload,
+    @Param('publicId') publicId: string,
+  ): Promise<{ url: string }> {
+    const url = await this.videosService.getDownloadUrl(user.sub, publicId);
+    return { url };
   }
 }

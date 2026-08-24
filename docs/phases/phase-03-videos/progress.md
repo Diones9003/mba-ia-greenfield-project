@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in progress
-**SIs:** 4/6 completed
+**SIs:** 5/6 completed
 
 ### SI-03.1 — Infrastructure: Storage, Queue, and Worker (Docker Compose, Config Namespaces, Dependencies)
 - **Status:** completed (2026-08-24)
@@ -24,9 +24,9 @@
 - **Observations:** Created BullMQ queue infrastructure: `video-processing.constants.ts` (queue/job names + `ProcessVideoJobData` interface), `video-processing.producer.ts` (adds jobs with 3-attempt exponential backoff retry policy), `video-processing.module.ts` (registers BullMQ with Redis config). Integrated producer into `VideosService.completeUpload` to emit job after status→PROCESSING. Created isolated worker app in `src/worker/`: `FfmpegService` (child_process wrappers for ffprobe metadata extraction + ffmpeg thumbnail generation), `VideoProcessingProcessor` (BullMQ @Processor consuming jobs: downloads video from storage→/tmp, extracts metadata, generates thumbnail at 10% duration or 5s, uploads thumbnail to storage, updates Video entity with status=READY/duration/thumbnailKey/metadata, cleanup temp files, error handling with status=ERROR + processingError). Created `WorkerModule` (TypeORM + BullMQ consumer + StorageModule, no HTTP server) and `main.worker.ts` bootstrap. Created `Dockerfile.worker` (node:20-alpine + ffmpeg via apk). Updated `compose.yaml`: nestjs-worker service with Dockerfile.worker build, DATABASE_*/S3_*/REDIS_* env vars using service names. All error handling uses type-safe `getErrorMessage`/`getErrorStack` helpers.
 
 ### SI-03.5 — Streaming and Download (Presigned GET, native Range/206) (TD-07)
-- **Status:** pending
-- **Tests:** —
-- **Observations:** —
+- **Status:** completed (2026-08-24)
+- **Tests:** `npm run test:e2e -- videos-streaming` — 1 suite / 7 tests green (stream/download redirect for READY videos, 404 for non-existent/draft, 401 without auth); `tsc --noEmit` clean
+- **Observations:** Added `getStreamUrl` and `getDownloadUrl` methods to `VideosService` (both enforce status=READY, throw VideoNotFoundException otherwise). Added `GET /videos/:publicId/stream` and `GET /videos/:publicId/download` endpoints to `VideosController` with `@Redirect()` decorator (returns 302 with presigned URL in Location header). Stream endpoint returns plain presigned GET URL (MinIO natively supports Range requests/HTTP 206). Download endpoint adds `Content-Disposition: attachment; filename="..."` via storage service opts. Both endpoints behind JWT guard. Created comprehensive e2e test suite `videos-streaming.e2e-spec.ts` covering ready/draft/non-existent scenarios.
 
 ### SI-03.6 — Complementary REST: Retrieve, List, Update, Delete
 - **Status:** pending

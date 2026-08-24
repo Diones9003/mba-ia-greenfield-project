@@ -208,6 +208,50 @@ export class VideosService {
     return VideoResponseDto.fromEntity(saved);
   }
 
+  /**
+   * Get a presigned URL for streaming the video.
+   * Only videos with status=READY are streamable.
+   */
+  async getStreamUrl(userId: string, publicId: string): Promise<string> {
+    const video = await this.loadOwnedVideo(userId, publicId);
+
+    if (video.status !== VideoStatus.READY) {
+      throw new VideoNotFoundException();
+    }
+
+    if (!video.storage_key) {
+      throw new VideoNotFoundException();
+    }
+
+    return this.storageService.getPresignedGetUrl(
+      video.storage_key,
+      this.uploadCfg.presignTtlSeconds,
+    );
+  }
+
+  /**
+   * Get a presigned URL for downloading the video.
+   * Only videos with status=READY are downloadable.
+   */
+  async getDownloadUrl(userId: string, publicId: string): Promise<string> {
+    const video = await this.loadOwnedVideo(userId, publicId);
+
+    if (video.status !== VideoStatus.READY) {
+      throw new VideoNotFoundException();
+    }
+
+    if (!video.storage_key) {
+      throw new VideoNotFoundException();
+    }
+
+    const filename = video.original_filename || `${video.public_id}.mp4`;
+    return this.storageService.getPresignedGetUrl(
+      video.storage_key,
+      this.uploadCfg.presignTtlSeconds,
+      { disposition: `attachment; filename="${filename}"` },
+    );
+  }
+
   /** Load a video by public id and assert the caller owns its channel. */
   private async loadOwnedVideo(
     userId: string,
