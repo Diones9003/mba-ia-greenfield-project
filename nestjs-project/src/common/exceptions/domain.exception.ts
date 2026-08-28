@@ -48,3 +48,51 @@ export class TokenReuseDetectedException extends DomainException {
     );
   }
 }
+
+// --- Video domain (Phase 03) ---
+
+export class VideoNotFoundException extends DomainException {
+  constructor() {
+    super('VIDEO_NOT_FOUND', 404, 'Video not found');
+  }
+}
+
+export class VideoNotReadyException extends DomainException {
+  constructor() {
+    super('VIDEO_NOT_READY', 409, 'Video is not ready');
+  }
+}
+
+export class NotVideoOwnerException extends DomainException {
+  constructor() {
+    super('NOT_VIDEO_OWNER', 403, 'You do not own this resource');
+  }
+}
+
+export class FileTooLargeException extends DomainException {
+  constructor() {
+    super('FILE_TOO_LARGE', 413, 'File exceeds the maximum allowed size');
+  }
+}
+
+export class UploadNotInitiatedException extends DomainException {
+  constructor() {
+    super(
+      'UPLOAD_NOT_INITIATED',
+      409,
+      'Upload has not been initiated for this video',
+    );
+  }
+}
+
+export class UploadAlreadyCompletedException extends DomainException {
+  constructor() {
+    super('UPLOAD_ALREADY_COMPLETED', 409, 'Upload has already been completed');
+  }
+}
+
+export class InvalidStatusTransitionException extends DomainException {
+  constructor() {
+    super('INVALID_STATUS_TRANSITION', 409, 'Invalid status transition');
+  }
+}

@@ -13,6 +13,8 @@ docker compose ps   # all services must show status "running"
 Then verify each infrastructure service is actually ready to accept connections — not just running:
 
 - **PostgreSQL:** `docker compose exec db pg_isready -U streamtube` — expect `accepting connections`
+- **Redis:** `docker compose exec redis redis-cli ping` — expect `PONG`
+- **MinIO:** `curl -f http://localhost:9000/minio/health/live` — expect HTTP 200
 
 Only start the NestJS dev server (`npm run start:dev`) when the user **explicitly** asks to run the application — never as part of "start the environment".
 
@@ -34,6 +36,11 @@ docker compose exec nestjs-api npm run start:dev
 Services:
 - `nestjs-api` — NestJS API, port `3000`
 - `db` — PostgreSQL 17, port `5432`, database `streamtube`, user/password `streamtube`
+- `mailpit` — SMTP (`1025`) + Web UI (`8025`)
+- `redis` — BullMQ backing store, port `6379`
+- `minio` — S3-compatible object storage, API `9000`, console `9001`
+- `minio-setup` — one-shot job that creates the `videos` bucket
+- `nestjs-worker` — FFmpeg worker (`Dockerfile.worker`); consumes `video-processing` jobs
 
 All verification and teardown commands run on the **host machine**:
 
@@ -44,8 +51,13 @@ curl http://localhost:3000
 # Verify PostgreSQL is ready (runs inside the db container)
 docker compose exec db pg_isready -U streamtube
 
+# Verify Redis and MinIO
+docker compose exec redis redis-cli ping
+curl -f http://localhost:9000/minio/health/live
+
 # Check container logs
 docker compose logs nestjs-api
+docker compose logs nestjs-worker
 docker compose logs db
 
 # Tear down the entire environment
@@ -148,13 +160,32 @@ NestJS with standard module structure. Source lives in `src/`, compiled output i
 
 - Each domain feature gets its own module (e.g., `UsersModule`, `VideosModule`) registered in `AppModule`
 - Controllers handle HTTP routing; Services hold business logic; both are scoped to their module
+- The video worker is a second Nest application (`src/worker/main.worker.ts` + `WorkerModule`) — no HTTP server; it shares TypeORM/storage/queue config with the API and uses the same env var names (`DB_*`, `STORAGE_*`, `REDIS_*`)
+
+## Videos module
+
+`src/videos/` owns upload, processing handshake, streaming, download, and complementary REST.
+
+| Method | Path | Auth | Notes |
+|--------|------|------|--------|
+| POST | `/videos` | JWT + owner | Pre-register `draft`, start S3 multipart (max 10GB) |
+| POST | `/videos/:publicId/parts/:partNumber/url` | JWT + owner | Presigned PUT for one part |
+| POST | `/videos/:publicId/complete` | JWT + owner | Assemble object, `processing`, enqueue BullMQ job |
+| GET | `/videos/:publicId` | Public | 200 if `ready`, 409 `VIDEO_NOT_READY`, 404 unknown |
+| GET | `/videos/:publicId/stream` | Public | 302 to presigned GET (Range/206 on MinIO) |
+| GET | `/videos/:publicId/download` | Public | 302 to presigned GET with attachment disposition |
+| GET | `/channels/:channelId/videos` | Public (optional JWT) | Newest first; anonymous = `ready` only |
+| PATCH | `/videos/:publicId` | JWT + owner | Title/description |
+| DELETE | `/videos/:publicId` | JWT + owner | 204; abort multipart if still `draft` |
+
+Status: `draft` → `processing` → `ready` \| `error`. Unique URL: `public_id` (nanoid). Thumbnail key: `{channelId}/{publicId}/thumb.jpg`.
 
 ## Code Conventions
 
 - **TypeScript:** `nodenext` module resolution, `ES2023` target, `strictNullChecks` on, `noImplicitAny` off
 - **Decorators:** `emitDecoratorMetadata` + `experimentalDecorators` enabled — required for NestJS DI
 - **Prettier:** single quotes, trailing commas everywhere
-- **ESLint:** `no-explicit-any` allowed; `no-floating-promises` and `no-unsafe-argument` are warnings
+- **ESLint:** `no-explicit-any` allowed; `no-floating-promises` and `no-unsafe-*` are warnings. Test files additionally treat `require-await`, unused vars, `unbound-method` and `no-unsafe-function-type` as warnings.
 
 ## REST Conventions
 

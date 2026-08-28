@@ -6,5 +6,8 @@
   "transform": {
     "^.+\\.(t|j)s$": "ts-jest"
   },
-  "setupFiles": ["dotenv/config"]
+  "setupFiles": [
+    "dotenv/config",
+    "<rootDir>/../src/test/docker-storage-endpoint.ts"
+  ]
 }
