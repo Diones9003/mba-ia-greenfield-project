@@ -188,18 +188,6 @@ green-field-ia-project/
 └── README.md
 ```
 
-## 📚 Fases do Projeto
-
-| Fase | Descrição | Status |
-|------|-----------|--------|
-| **01** | Configuração Base do Projeto | ✅ Concluída |
-| **02** | Cadastro, Login e Gerenciamento de Conta | ✅ Concluída |
-| **03** | Upload e Processamento de Vídeos | ⏳ Planejada |
-| **04** | Gerenciamento de Vídeos e Canal | ⏳ Planejada |
-| **05** | Página de Visualização do Vídeo | ⏳ Planejada |
-| **06** | Interações Sociais (Likes, Comentários, Inscrições) | ⏳ Planejada |
-| **07** | Página Inicial, Busca e Finalização | ⏳ Planejada |
-
 Detalhes completos em `docs/project-plan.md`.
 
 ## 📖 Stack Tecnológica

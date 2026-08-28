@@ -6,6 +6,8 @@ const requiredEnv = {
   DB_NAME: 'db',
   JWT_SECRET: 'secret',
   JWT_REFRESH_SECRET: 'refresh-secret',
+  STORAGE_ACCESS_KEY: 'minioadmin',
+  STORAGE_SECRET_KEY: 'minioadmin',
 };
 
 const validate = (env: Record<string, string>) =>
@@ -35,5 +37,51 @@ describe('envValidationSchema — SWAGGER_ENABLED', () => {
     const { value, error } = validate({});
     expect(error).toBeUndefined();
     expect(value.SWAGGER_ENABLED).toBe('false');
+  });
+});
+
+describe('envValidationSchema — storage / queue / upload (Phase 03)', () => {
+  it('should reject when STORAGE_ACCESS_KEY is missing', () => {
+    const { error } = envValidationSchema.validate(
+      {
+        DB_USERNAME: 'user',
+        DB_PASSWORD: 'pass',
+        DB_NAME: 'db',
+        JWT_SECRET: 'secret',
+        JWT_REFRESH_SECRET: 'refresh-secret',
+        STORAGE_SECRET_KEY: 'minioadmin',
+      },
+      { allowUnknown: true, abortEarly: false },
+    );
+    expect(error).toBeDefined();
+    expect(error!.message).toContain('STORAGE_ACCESS_KEY');
+  });
+
+  it('should reject when STORAGE_SECRET_KEY is missing', () => {
+    const { error } = envValidationSchema.validate(
+      {
+        DB_USERNAME: 'user',
+        DB_PASSWORD: 'pass',
+        DB_NAME: 'db',
+        JWT_SECRET: 'secret',
+        JWT_REFRESH_SECRET: 'refresh-secret',
+        STORAGE_ACCESS_KEY: 'minioadmin',
+      },
+      { allowUnknown: true, abortEarly: false },
+    );
+    expect(error).toBeDefined();
+    expect(error!.message).toContain('STORAGE_SECRET_KEY');
+  });
+
+  it('should apply Docker-compatible defaults for queue and storage', () => {
+    const { error, value } = validate({});
+    const env = value as Record<string, unknown>;
+    expect(error).toBeUndefined();
+    expect(env.REDIS_HOST).toBe('redis');
+    expect(env.REDIS_PORT).toBe(6379);
+    expect(env.STORAGE_ENDPOINT).toBe('http://minio:9000');
+    expect(env.STORAGE_BUCKET).toBe('videos');
+    expect(env.VIDEO_QUEUE_NAME).toBe('video-processing');
+    expect(env.UPLOAD_MAX_SIZE_BYTES).toBe(10737418240);
   });
 });

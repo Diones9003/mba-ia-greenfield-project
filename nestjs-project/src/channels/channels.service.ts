@@ -59,4 +59,18 @@ export class ChannelsService {
       );
     });
   }
+
+  /** Load a channel by id, or null when absent. */
+  async findById(channelId: string): Promise<Channel | null> {
+    return this.dataSource
+      .getRepository(Channel)
+      .findOne({ where: { id: channelId } });
+  }
+
+  /** Load the channel owned by the given user, or null when absent. */
+  async findByUserId(userId: string): Promise<Channel | null> {
+    return this.dataSource
+      .getRepository(Channel)
+      .findOne({ where: { user_id: userId } });
+  }
 }
