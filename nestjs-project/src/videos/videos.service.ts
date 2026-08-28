@@ -19,6 +19,7 @@ import {
   UploadAlreadyCompletedException,
   UploadNotInitiatedException,
   VideoNotFoundException,
+  VideoNotReadyException,
 } from '../common/exceptions/domain.exception';
 
 const PG_UNIQUE_VIOLATION = '23505';
@@ -209,77 +210,45 @@ export class VideosService {
   }
 
   /**
-   * Get a presigned URL for streaming the video.
-   * Only videos with status=READY are streamable.
+   * Presigned GET URL for streaming. Public for `ready` videos (TD-07).
    */
-  async getStreamUrl(userId: string, publicId: string): Promise<string> {
-    const video = await this.loadOwnedVideo(userId, publicId);
-
-    if (video.status !== VideoStatus.READY) {
-      throw new VideoNotFoundException();
-    }
-
-    if (!video.storage_key) {
-      throw new VideoNotFoundException();
-    }
-
+  async getStreamUrl(publicId: string): Promise<string> {
+    const video = await this.loadReadyVideo(publicId);
     return this.storageService.getPresignedGetUrl(
-      video.storage_key,
-      this.uploadCfg.presignTtlSeconds,
+      video.storage_key!,
+      this.uploadCfg.streamPresignTtlSeconds,
     );
   }
 
   /**
-   * Get a presigned URL for downloading the video.
-   * Only videos with status=READY are downloadable.
+   * Presigned GET URL for download with attachment disposition (TD-07).
    */
-  async getDownloadUrl(userId: string, publicId: string): Promise<string> {
-    const video = await this.loadOwnedVideo(userId, publicId);
-
-    if (video.status !== VideoStatus.READY) {
-      throw new VideoNotFoundException();
-    }
-
-    if (!video.storage_key) {
-      throw new VideoNotFoundException();
-    }
-
+  async getDownloadUrl(publicId: string): Promise<string> {
+    const video = await this.loadReadyVideo(publicId);
     const filename = video.original_filename || `${video.public_id}.mp4`;
     return this.storageService.getPresignedGetUrl(
-      video.storage_key,
-      this.uploadCfg.presignTtlSeconds,
+      video.storage_key!,
+      this.uploadCfg.streamPresignTtlSeconds,
       { disposition: `attachment; filename="${filename}"` },
     );
   }
 
   /**
-   * Get video details by public ID.
-   * Public if status=READY, owner-only otherwise.
+   * Public retrieval: 200 for `ready`, 409 if the video exists but is not ready.
    */
-  async getVideoDetails(
-    userId: string | null,
-    publicId: string,
-  ): Promise<VideoResponseDto> {
+  async getVideoDetails(publicId: string): Promise<VideoResponseDto> {
     const video = await this.videosRepository.findByPublicId(publicId);
     if (!video) {
       throw new VideoNotFoundException();
     }
-
-    // If not READY, only owner can access
     if (video.status !== VideoStatus.READY) {
-      if (!userId) {
-        throw new VideoNotFoundException();
-      }
-      const channel = await this.channelsService.findById(video.channel_id);
-      if (!channel || channel.user_id !== userId) {
-        throw new VideoNotFoundException();
-      }
+      throw new VideoNotReadyException();
     }
 
     const thumbnailUrl = video.thumbnail_key
       ? await this.storageService.getPresignedGetUrl(
           video.thumbnail_key,
-          this.uploadCfg.presignTtlSeconds,
+          this.uploadCfg.streamPresignTtlSeconds,
         )
       : undefined;
 
@@ -287,34 +256,34 @@ export class VideosService {
   }
 
   /**
-   * List videos for a channel (paginated, READY only).
+   * List a channel's videos, newest first.
+   * Public callers see only `ready`; the owner sees every status.
    */
   async listChannelVideos(
     channelId: string,
-    page = 1,
-    limit = 20,
-  ): Promise<{ videos: VideoResponseDto[]; total: number }> {
-    const skip = (page - 1) * limit;
-    const [videos, total] = await this.videosRepository.findByChannelWithStatus(
-      channelId,
-      VideoStatus.READY,
-      skip,
-      limit,
-    );
+    userId: string | null,
+  ): Promise<VideoResponseDto[]> {
+    const channel = await this.channelsService.findById(channelId);
+    if (!channel) {
+      return [];
+    }
 
-    const videosWithThumbnails = await Promise.all(
+    const ownerListing = userId !== null && channel.user_id === userId;
+    const videos = ownerListing
+      ? await this.videosRepository.findByChannel(channelId)
+      : await this.videosRepository.findByChannel(channelId, VideoStatus.READY);
+
+    return Promise.all(
       videos.map(async (v) => {
         const thumbnailUrl = v.thumbnail_key
           ? await this.storageService.getPresignedGetUrl(
               v.thumbnail_key,
-              this.uploadCfg.presignTtlSeconds,
+              this.uploadCfg.streamPresignTtlSeconds,
             )
           : undefined;
         return VideoResponseDto.fromEntity(v, { thumbnailUrl });
       }),
     );
-
-    return { videos: videosWithThumbnails, total };
   }
 
   /**
@@ -346,7 +315,12 @@ export class VideosService {
   async deleteVideo(userId: string, publicId: string): Promise<void> {
     const video = await this.loadOwnedVideo(userId, publicId);
 
-    // Delete from storage
+    if (video.upload_id && video.storage_key) {
+      await this.storageService.abortMultipartUpload(
+        video.storage_key,
+        video.upload_id,
+      );
+    }
     if (video.storage_key) {
       await this.storageService.deleteObject(video.storage_key);
     }
@@ -370,6 +344,18 @@ export class VideosService {
     const channel = await this.channelsService.findById(video.channel_id);
     if (!channel || channel.user_id !== userId) {
       throw new NotVideoOwnerException();
+    }
+    return video;
+  }
+
+  /** Load a `ready` video for public streaming/download. */
+  private async loadReadyVideo(publicId: string): Promise<Video> {
+    const video = await this.videosRepository.findByPublicId(publicId);
+    if (!video) {
+      throw new VideoNotFoundException();
+    }
+    if (video.status !== VideoStatus.READY || !video.storage_key) {
+      throw new VideoNotReadyException();
     }
     return video;
   }

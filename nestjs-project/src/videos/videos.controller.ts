@@ -9,7 +9,6 @@ import {
   ParseIntPipe,
   Patch,
   Post,
-  Query,
   Redirect,
 } from '@nestjs/common';
 import {
@@ -145,6 +144,7 @@ export class VideosController {
     return this.videosService.completeUpload(user.sub, publicId, dto);
   }
 
+  @Public()
   @Get(':publicId/stream')
   @Redirect()
   @ApiOperation({
@@ -159,17 +159,22 @@ export class VideosController {
   })
   @ApiResponse({
     status: 404,
-    description: 'Video not found or not ready',
+    description: 'Video not found',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'Video is not ready',
     schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
   })
   async streamVideo(
-    @CurrentUser() user: JwtPayload,
     @Param('publicId') publicId: string,
   ): Promise<{ url: string }> {
-    const url = await this.videosService.getStreamUrl(user.sub, publicId);
+    const url = await this.videosService.getStreamUrl(publicId);
     return { url };
   }
 
+  @Public()
   @Get(':publicId/download')
   @Redirect()
   @ApiOperation({
@@ -184,14 +189,18 @@ export class VideosController {
   })
   @ApiResponse({
     status: 404,
-    description: 'Video not found or not ready',
+    description: 'Video not found',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'Video is not ready',
     schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
   })
   async downloadVideo(
-    @CurrentUser() user: JwtPayload,
     @Param('publicId') publicId: string,
   ): Promise<{ url: string }> {
-    const url = await this.videosService.getDownloadUrl(user.sub, publicId);
+    const url = await this.videosService.getDownloadUrl(publicId);
     return { url };
   }
 
@@ -199,8 +208,7 @@ export class VideosController {
   @Public()
   @ApiOperation({
     summary: 'Get video details',
-    description:
-      'Returns video details. Public if status=READY, owner-only otherwise.',
+    description: 'Public retrieval of a ready video. Returns 409 if not ready.',
   })
   @ApiResponse({
     status: 200,
@@ -209,14 +217,18 @@ export class VideosController {
   })
   @ApiResponse({
     status: 404,
-    description: 'Video not found or not accessible',
+    description: 'Video not found',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'Video is not ready',
     schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
   })
   async getVideo(
-    @CurrentUser() user: JwtPayload | undefined,
     @Param('publicId') publicId: string,
   ): Promise<VideoResponseDto> {
-    return this.videosService.getVideoDetails(user?.sub || null, publicId);
+    return this.videosService.getVideoDetails(publicId);
   }
 
   @Patch(':publicId')

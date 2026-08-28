@@ -8,6 +8,7 @@ import { Video } from './entities/video.entity';
 import { VideosRepository } from './videos.repository';
 import { VideosService } from './videos.service';
 import { VideosController } from './videos.controller';
+import { ChannelVideosController } from './channel-videos.controller';
 import { VideoProcessingModule } from './queue/video-processing.module';
 
 @Module({
@@ -18,7 +19,7 @@ import { VideoProcessingModule } from './queue/video-processing.module';
     StorageModule,
     VideoProcessingModule,
   ],
-  controllers: [VideosController],
+  controllers: [VideosController, ChannelVideosController],
   providers: [VideosRepository, VideosService],
   exports: [TypeOrmModule, VideosRepository, VideosService],
 })

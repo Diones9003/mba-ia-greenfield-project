@@ -1,2 +1,4 @@
 .history/
 settings.local.json
+.logs/
+.abacus.donotdelete

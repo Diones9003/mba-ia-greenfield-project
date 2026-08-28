@@ -1,5 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import type { ConfigType } from '@nestjs/config';
 import { spawn } from 'child_process';
+import uploadConfig from '../../config/upload.config';
 
 export interface VideoMetadata {
   duration: number; // seconds
@@ -11,11 +13,16 @@ export interface VideoMetadata {
 
 /**
  * FFmpeg/FFprobe wrapper using child_process (TD-05).
- * Invokes the binaries directly (no fluent-ffmpeg wrapper).
+ * Invokes the binaries from upload config (FFMPEG_PATH / FFPROBE_PATH).
  */
 @Injectable()
 export class FfmpegService {
   private readonly logger = new Logger(FfmpegService.name);
+
+  constructor(
+    @Inject(uploadConfig.KEY)
+    private readonly uploadCfg: ConfigType<typeof uploadConfig>,
+  ) {}
 
   /**
    * Extract video metadata using ffprobe.
@@ -34,7 +41,7 @@ export class FfmpegService {
         filePath,
       ];
 
-      const ffprobe = spawn('ffprobe', args);
+      const ffprobe = spawn(this.uploadCfg.ffprobePath, args);
       let stdout = '';
       let stderr = '';
 
@@ -59,8 +66,7 @@ export class FfmpegService {
           const data = JSON.parse(stdout);
           // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
           const videoStream = data.streams?.find(
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return
-            (s: any) => s.width && s.height,
+            (s: { width?: number; height?: number }) => s.width && s.height,
           );
 
           const metadata: VideoMetadata = {
@@ -117,7 +123,7 @@ export class FfmpegService {
         outputPath,
       ];
 
-      const ffmpeg = spawn('ffmpeg', args);
+      const ffmpeg = spawn(this.uploadCfg.ffmpegPath, args);
       let stderr = '';
 
       ffmpeg.stderr.on('data', (data: Buffer) => {

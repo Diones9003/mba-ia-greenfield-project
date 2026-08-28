@@ -57,6 +57,12 @@ export class VideoNotFoundException extends DomainException {
   }
 }
 
+export class VideoNotReadyException extends DomainException {
+  constructor() {
+    super('VIDEO_NOT_READY', 409, 'Video is not ready');
+  }
+}
+
 export class NotVideoOwnerException extends DomainException {
   constructor() {
     super('NOT_VIDEO_OWNER', 403, 'You do not own this resource');

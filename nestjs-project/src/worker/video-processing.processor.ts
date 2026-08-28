@@ -1,4 +1,4 @@
-import { Processor, WorkerHost } from '@nestjs/bullmq';
+import { OnWorkerEvent, Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { createWriteStream, promises as fs } from 'fs';
@@ -99,8 +99,8 @@ export class VideoProcessingProcessor extends WorkerHost {
       );
       this.logger.log(`Thumbnail generated successfully`);
 
-      // 5. Upload thumbnail to storage
-      const thumbnailKey = `thumbnails/${publicId}.jpg`;
+      // 5. Upload thumbnail to storage (key shape from SI-03.4)
+      const thumbnailKey = `${video.channel_id}/${publicId}/thumb.jpg`;
       this.logger.log(`Uploading thumbnail to storage: ${thumbnailKey}`);
 
       const thumbnailBuffer = await fs.readFile(thumbnailFilePath);
@@ -132,22 +132,7 @@ export class VideoProcessingProcessor extends WorkerHost {
         getErrorStack(error),
       );
 
-      // Update video status to ERROR
-      try {
-        const video = await this.videosRepository.findById(videoId);
-        if (video) {
-          video.status = VideoStatus.ERROR;
-          video.processing_error = getErrorMessage(error) || 'Unknown error';
-          await this.videosRepository.save(video);
-          this.logger.log(`Video ${publicId} marked as ERROR`);
-        }
-      } catch (updateError) {
-        this.logger.error(
-          `Failed to update video status to ERROR: ${getErrorMessage(updateError)}`,
-        );
-      }
-
-      throw error; // Re-throw to trigger BullMQ retry
+      throw error; // Re-throw to trigger BullMQ retry; ERROR is set only on final failure
     } finally {
       // 7. Cleanup temp files
       if (videoFilePath) {
@@ -173,6 +158,42 @@ export class VideoProcessingProcessor extends WorkerHost {
           );
         }
       }
+    }
+  }
+
+  /**
+   * Mark the video as `error` only after BullMQ has exhausted retries (TD-08).
+   */
+  @OnWorkerEvent('failed')
+  async onFailed(
+    job: Job<ProcessVideoJobData> | undefined,
+    error: Error,
+  ): Promise<void> {
+    if (!job) {
+      return;
+    }
+    const maxAttempts = job.opts.attempts ?? 1;
+    if (job.attemptsMade < maxAttempts) {
+      return;
+    }
+
+    const { videoId, publicId } = job.data;
+    this.logger.error(
+      `Job ${job.id} permanently failed for video ${publicId}: ${error.message}`,
+    );
+
+    try {
+      const video = await this.videosRepository.findById(videoId);
+      if (video) {
+        video.status = VideoStatus.ERROR;
+        video.processing_error = getErrorMessage(error) || 'Unknown error';
+        await this.videosRepository.save(video);
+        this.logger.log(`Video ${publicId} marked as ERROR`);
+      }
+    } catch (updateError) {
+      this.logger.error(
+        `Failed to update video status to ERROR: ${getErrorMessage(updateError)}`,
+      );
     }
   }
 }

@@ -1,19 +1,28 @@
+# Build the NestJS worker from source so `docker compose up` does not
+# depend on a pre-existing `dist/` on the host.
+FROM node:20-alpine AS build
+
+RUN apk add --no-cache python3 make g++
+
+WORKDIR /app
+
+COPY package*.json ./
+# `npm ci` fails on alpine/npm 10 when optional peer deps (chokidar@3) are
+# not hoisted in the lockfile; `npm install` resolves the same tree.
+RUN npm install
+
+COPY . .
+RUN npm run build
+RUN npm prune --omit=dev
+
 FROM node:20-alpine
 
-# Install FFmpeg and FFprobe
 RUN apk add --no-cache ffmpeg
 
 WORKDIR /app
 
-# Copy package files
-COPY package*.json ./
-RUN npm ci --only=production
+COPY --from=build /app/package.json ./
+COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/dist ./dist
 
-# Copy compiled dist
-COPY dist ./dist
-
-# Copy TypeScript config (for source maps if needed)
-COPY tsconfig.json ./
-
-# Run the worker (not the main API)
 CMD ["node", "dist/worker/main.worker.js"]

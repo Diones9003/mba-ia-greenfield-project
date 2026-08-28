@@ -98,6 +98,7 @@ describe('VideoProcessingProcessor', () => {
       const mockVideo: Partial<Video> = {
         id: jobData.videoId,
         public_id: jobData.publicId,
+        channel_id: 'channel-1',
         storage_key: jobData.storageKey,
         status: VideoStatus.PROCESSING,
       };
@@ -130,7 +131,7 @@ describe('VideoProcessingProcessor', () => {
       expect(ffmpegService.extractMetadata).toHaveBeenCalled();
       expect(ffmpegService.generateThumbnail).toHaveBeenCalled();
       expect(storageService.putObject).toHaveBeenCalledWith(
-        expect.stringContaining('thumbnails/'),
+        'channel-1/abc123xyz/thumb.jpg',
         expect.any(Buffer),
         'image/jpeg',
       );
@@ -138,7 +139,7 @@ describe('VideoProcessingProcessor', () => {
         expect.objectContaining({
           status: VideoStatus.READY,
           duration_seconds: 121,
-          thumbnail_key: expect.stringContaining('thumbnails/'),
+          thumbnail_key: 'channel-1/abc123xyz/thumb.jpg',
           metadata: expect.objectContaining({
             width: 1920,
             height: 1080,
@@ -147,7 +148,7 @@ describe('VideoProcessingProcessor', () => {
       );
     });
 
-    it('should update status to ERROR on processing failure', async () => {
+    it('should rethrow on processing failure without marking ERROR (retries still pending)', async () => {
       const jobData: ProcessVideoJobData = {
         videoId: 'video-id-123',
         publicId: 'abc123xyz',
@@ -171,10 +172,34 @@ describe('VideoProcessingProcessor', () => {
         new Error('Storage error'),
       );
 
-      // On error, the processor should update the video and re-throw
       await expect(processor.process(mockJob)).rejects.toThrow('Storage error');
+      expect(videosRepository.save).not.toHaveBeenCalled();
+    });
 
-      // Should have attempted to mark as ERROR
+    it('should mark ERROR on final BullMQ failure', async () => {
+      const jobData: ProcessVideoJobData = {
+        videoId: 'video-id-123',
+        publicId: 'abc123xyz',
+        storageKey: 'videos/abc123xyz.mp4',
+      };
+
+      const mockJob = {
+        id: 'job-123',
+        data: jobData,
+        attemptsMade: 3,
+        opts: { attempts: 3 },
+      } as Job<ProcessVideoJobData>;
+
+      const mockVideo: Partial<Video> = {
+        id: jobData.videoId,
+        public_id: jobData.publicId,
+        status: VideoStatus.PROCESSING,
+      };
+      videosRepository.findById.mockResolvedValue(mockVideo as Video);
+      videosRepository.save.mockResolvedValue(mockVideo as Video);
+
+      await processor.onFailed(mockJob, new Error('Storage error'));
+
       expect(videosRepository.save).toHaveBeenCalledWith(
         expect.objectContaining({
           status: VideoStatus.ERROR,

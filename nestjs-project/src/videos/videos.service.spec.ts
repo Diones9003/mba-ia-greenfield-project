@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/unbound-method */
 import { Test } from '@nestjs/testing';
 import { Video } from './entities/video.entity';
 import { VideoStatus } from './entities/video-status.enum';
@@ -14,6 +15,7 @@ import {
   UploadAlreadyCompletedException,
   UploadNotInitiatedException,
   VideoNotFoundException,
+  VideoNotReadyException,
 } from '../common/exceptions/domain.exception';
 
 const OWNER_ID = 'user-1';
@@ -34,6 +36,8 @@ describe('VideosService', () => {
       | 'completeMultipartUpload'
       | 'abortMultipartUpload'
       | 'getPresignedUploadPartUrl'
+      | 'getPresignedGetUrl'
+      | 'deleteObject'
     >
   >;
 
@@ -51,6 +55,8 @@ describe('VideosService', () => {
       create: jest.fn((data) => data as Video),
       save: jest.fn((video) => Promise.resolve(video)),
       findByPublicId: jest.fn().mockResolvedValue(null),
+      findByChannel: jest.fn().mockResolvedValue([]),
+      remove: jest.fn().mockResolvedValue(undefined),
     };
     const channelsMock = { findById: jest.fn() };
     const storageMock = {
@@ -62,6 +68,10 @@ describe('VideosService', () => {
       getPresignedUploadPartUrl: jest
         .fn()
         .mockResolvedValue('https://storage/presigned-part'),
+      getPresignedGetUrl: jest
+        .fn()
+        .mockResolvedValue('https://storage/presigned-get'),
+      deleteObject: jest.fn().mockResolvedValue(undefined),
     };
     const queueProducerMock = {
       addProcessVideoJob: jest.fn().mockResolvedValue(undefined),
@@ -280,6 +290,139 @@ describe('VideosService', () => {
     it('returns null for an unknown public id', async () => {
       repository.findByPublicId.mockResolvedValue(null);
       await expect(service.findByPublicId('nope')).resolves.toBeNull();
+    });
+  });
+
+  describe('getStreamUrl / getDownloadUrl', () => {
+    it('returns a presigned GET URL for a ready video', async () => {
+      repository.findByPublicId.mockResolvedValue({
+        public_id: 'abc',
+        status: VideoStatus.READY,
+        storage_key: 'chan/abc/source',
+      } as Video);
+
+      await expect(service.getStreamUrl('abc')).resolves.toBe(
+        'https://storage/presigned-get',
+      );
+      expect(storage.getPresignedGetUrl).toHaveBeenCalledWith(
+        'chan/abc/source',
+        uploadCfg.streamPresignTtlSeconds,
+      );
+    });
+
+    it('throws VideoNotReadyException for a draft', async () => {
+      repository.findByPublicId.mockResolvedValue({
+        public_id: 'abc',
+        status: VideoStatus.DRAFT,
+        storage_key: 'chan/abc/source',
+      } as Video);
+
+      await expect(service.getStreamUrl('abc')).rejects.toBeInstanceOf(
+        VideoNotReadyException,
+      );
+    });
+
+    it('passes attachment disposition on download', async () => {
+      repository.findByPublicId.mockResolvedValue({
+        public_id: 'abc',
+        status: VideoStatus.READY,
+        storage_key: 'chan/abc/source',
+        original_filename: 'clip.mp4',
+      } as Video);
+
+      await service.getDownloadUrl('abc');
+      expect(storage.getPresignedGetUrl).toHaveBeenCalledWith(
+        'chan/abc/source',
+        uploadCfg.streamPresignTtlSeconds,
+        { disposition: 'attachment; filename="clip.mp4"' },
+      );
+    });
+  });
+
+  describe('getVideoDetails', () => {
+    it('returns the public projection for a ready video', async () => {
+      repository.findByPublicId.mockResolvedValue({
+        public_id: 'abc',
+        title: 'Clip',
+        description: null,
+        status: VideoStatus.READY,
+        channel_id: CHANNEL_ID,
+        duration_seconds: 12,
+        thumbnail_key: null,
+        created_at: new Date(),
+        updated_at: new Date(),
+      } as Video);
+
+      const dto = await service.getVideoDetails('abc');
+      expect(dto.publicId).toBe('abc');
+      expect(dto.status).toBe(VideoStatus.READY);
+    });
+
+    it('throws VideoNotReadyException when the video is not ready', async () => {
+      repository.findByPublicId.mockResolvedValue({
+        public_id: 'abc',
+        status: VideoStatus.PROCESSING,
+      } as Video);
+
+      await expect(service.getVideoDetails('abc')).rejects.toBeInstanceOf(
+        VideoNotReadyException,
+      );
+    });
+  });
+
+  describe('listChannelVideos', () => {
+    it('returns only ready videos for anonymous callers', async () => {
+      channels.findById.mockResolvedValue(ownedChannel() as never);
+      repository.findByChannel.mockResolvedValue([
+        {
+          public_id: 'ready-1',
+          title: 'Ready',
+          description: null,
+          status: VideoStatus.READY,
+          channel_id: CHANNEL_ID,
+          duration_seconds: null,
+          thumbnail_key: null,
+          created_at: new Date(),
+          updated_at: new Date(),
+        } as Video,
+      ]);
+
+      const list = await service.listChannelVideos(CHANNEL_ID, null);
+      expect(repository.findByChannel).toHaveBeenCalledWith(
+        CHANNEL_ID,
+        VideoStatus.READY,
+      );
+      expect(list).toHaveLength(1);
+    });
+
+    it('returns every status for the owner', async () => {
+      channels.findById.mockResolvedValue(ownedChannel() as never);
+      repository.findByChannel.mockResolvedValue([]);
+
+      await service.listChannelVideos(CHANNEL_ID, OWNER_ID);
+      expect(repository.findByChannel).toHaveBeenCalledWith(CHANNEL_ID);
+    });
+  });
+
+  describe('deleteVideo', () => {
+    it('aborts an in-flight multipart upload for a draft', async () => {
+      channels.findById.mockResolvedValue(ownedChannel() as never);
+      repository.findByPublicId.mockResolvedValue({
+        public_id: 'abc',
+        channel_id: CHANNEL_ID,
+        status: VideoStatus.DRAFT,
+        storage_key: 'chan/abc/source',
+        upload_id: 'upload-123',
+        thumbnail_key: null,
+      } as Video);
+
+      await service.deleteVideo(OWNER_ID, 'abc');
+      expect(storage.abortMultipartUpload).toHaveBeenCalledWith(
+        'chan/abc/source',
+        'upload-123',
+      );
+      expect(storage.deleteObject).toHaveBeenCalledWith('chan/abc/source');
+      expect(repository.remove).toHaveBeenCalled();
     });
   });
 });

@@ -1,10 +1,10 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument, @typescript-eslint/require-await */
 import request from 'supertest';
 import { Test } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { AppModule } from '../src/app.module';
 import { AuthService } from '../src/auth/auth.service';
 import { DataSource } from 'typeorm';
-import { cleanAllTables } from '../src/test/create-test-data-source';
 import { DomainExceptionFilter } from '../src/common/filters/domain-exception.filter';
 import { ValidationExceptionFilter } from '../src/common/filters/validation-exception.filter';
 
@@ -123,10 +123,9 @@ describe('Videos Streaming & Download (e2e)', () => {
       publicId = result[0].public_id;
     });
 
-    it('should return a redirect URL for streaming', async () => {
+    it('should return a redirect URL for streaming without authentication', async () => {
       const res = await request(app.getHttpServer())
         .get(`/videos/${publicId}/stream`)
-        .set('Authorization', `Bearer ${accessToken}`)
         .expect(302);
 
       expect(res.headers.location).toBeDefined();
@@ -134,10 +133,9 @@ describe('Videos Streaming & Download (e2e)', () => {
       expect(res.headers.location).toContain('videos/ready123abc.mp4');
     });
 
-    it('should return a redirect URL for download', async () => {
+    it('should return a redirect URL for download without authentication', async () => {
       const res = await request(app.getHttpServer())
         .get(`/videos/${publicId}/download`)
-        .set('Authorization', `Bearer ${accessToken}`)
         .expect(302);
 
       expect(res.headers.location).toBeDefined();
@@ -146,12 +144,6 @@ describe('Videos Streaming & Download (e2e)', () => {
       expect(res.headers.location).toContain(
         'response-content-disposition=attachment',
       );
-    });
-
-    it('should return 401 when not authenticated', async () => {
-      await request(app.getHttpServer())
-        .get(`/videos/${publicId}/stream`)
-        .expect(401);
     });
   });
 
@@ -180,18 +172,22 @@ describe('Videos Streaming & Download (e2e)', () => {
       draftPublicId = result[0].public_id;
     });
 
-    it('should return 404 when streaming a draft video', async () => {
+    it('should return 409 when streaming a draft video', async () => {
       await request(app.getHttpServer())
         .get(`/videos/${draftPublicId}/stream`)
-        .set('Authorization', `Bearer ${accessToken}`)
-        .expect(404);
+        .expect(409)
+        .expect((res) => {
+          expect(res.body.error).toBe('VIDEO_NOT_READY');
+        });
     });
 
-    it('should return 404 when downloading a draft video', async () => {
+    it('should return 409 when downloading a draft video', async () => {
       await request(app.getHttpServer())
         .get(`/videos/${draftPublicId}/download`)
-        .set('Authorization', `Bearer ${accessToken}`)
-        .expect(404);
+        .expect(409)
+        .expect((res) => {
+          expect(res.body.error).toBe('VIDEO_NOT_READY');
+        });
     });
   });
 });

@@ -17,7 +17,10 @@ describe('StorageService (integration, MinIO)', () => {
   });
 
   async function putPart(url: string, body: Buffer): Promise<string> {
-    const res = await fetch(url, { method: 'PUT', body: new Uint8Array(body) });
+    const res = await fetch(url, {
+      method: 'PUT',
+      body: new Uint8Array(body),
+    });
     expect(res.status).toBe(200);
     const etag = res.headers.get('etag');
     expect(etag).toBeTruthy();

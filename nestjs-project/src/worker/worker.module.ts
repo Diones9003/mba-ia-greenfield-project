@@ -5,7 +5,11 @@ import { BullModule } from '@nestjs/bullmq';
 import databaseConfig from '../config/database.config';
 import storageConfig from '../config/storage.config';
 import queueConfig from '../config/queue.config';
+import uploadConfig from '../config/upload.config';
+import { envValidationSchema } from '../config/env.validation';
 import { Video } from '../videos/entities/video.entity';
+import { Channel } from '../channels/entities/channel.entity';
+import { User } from '../users/entities/user.entity';
 import { VideosRepository } from '../videos/videos.repository';
 import { StorageModule } from '../storage/storage.module';
 import { VideoProcessingProcessor } from './video-processing.processor';
@@ -22,7 +26,9 @@ import { VIDEO_PROCESSING_QUEUE } from '../videos/queue/video-processing.constan
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      load: [databaseConfig, storageConfig, queueConfig],
+      load: [databaseConfig, storageConfig, queueConfig, uploadConfig],
+      validationSchema: envValidationSchema,
+      validationOptions: { allowUnknown: true, abortEarly: false },
     }),
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
@@ -33,7 +39,8 @@ import { VIDEO_PROCESSING_QUEUE } from '../videos/queue/video-processing.constan
         username: configService.get<string>('database.username'),
         password: configService.get<string>('database.password'),
         database: configService.get<string>('database.name'),
-        entities: [Video],
+        // Video → Channel → User: TypeORM exige o grafo completo de relações.
+        entities: [Video, Channel, User],
         synchronize: false, // Never auto-sync in production
       }),
       inject: [ConfigService],

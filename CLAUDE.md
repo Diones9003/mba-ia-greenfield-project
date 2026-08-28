@@ -10,9 +10,9 @@ More info in the project overview: [docs/project-plan.md](docs/project-plan.md)
 
 This is a monorepo with two main areas:
 
-- `nestjs-project/` — Backend API (NestJS 11, TypeScript, Express). Contains modules for users, channels, videos, comments, etc.
+- `nestjs-project/` — Backend API (NestJS 11, TypeScript, Express). Contains modules for auth, users, channels, videos, plus a dedicated video worker.
 - `docs/` — Project documentation, architecture diagrams, and planning.
-- `next-frontend/` (Next.js) — not yet initialized
+- `next-frontend/` — Next.js frontend (Fases 01–02: auth screens). Video UI is out of scope for Fase 03.
 
 ## Architecture (C4 Container Diagram)
 
@@ -23,7 +23,7 @@ See `docs/diagrams/software-arch.mermaid` for the full diagram. Key containers:
 - **Video Worker** (FFmpeg) → consumes jobs from queue, processes videos, updates DB and storage
 - **Database** (PostgreSQL) → users, channels, videos, comments, likes
 - **Object Storage** (S3/MinIO) → video files and thumbnails
-- **Message Queue** (TBD) → video processing job queue
+- **Message Queue** (Redis + BullMQ) → video processing job queue
 - **Email Service** (SMTP) → account confirmation and password recovery
 
 ## Docker Networking
@@ -36,6 +36,29 @@ Inside a container, `localhost` refers to the container itself, not the host mac
 - **Wrong:** `DB_HOST=localhost`
 
 This applies to all environment variables, configuration files, and code that references service hosts.
+
+## Phase 03 — Videos (`nestjs-project/src/videos/`)
+
+Backend-only phase: upload, processing, streaming, and download. No video UI.
+
+**Infrastructure** (Compose services, hosts are service names): `minio` (S3-compatible storage), `redis` (BullMQ), `nestjs-worker` (FFmpeg/ffprobe in `Dockerfile.worker`).
+
+**Upload (presigned multipart, max 10GB):** file bytes never pass through the API.
+- `POST /videos` — pre-registers a `draft` and starts the multipart upload (JWT, channel owner)
+- `POST /videos/:publicId/parts/:partNumber/url` — presigned PUT URL for one part
+- `POST /videos/:publicId/complete` — completes the object, status → `processing`, enqueues a BullMQ job
+
+**Public reads** (`@Public()`, gated on `status = ready`):
+- `GET /videos/:publicId` — metadata (409 `VIDEO_NOT_READY` otherwise)
+- `GET /videos/:publicId/stream` — 302 to a presigned GET (MinIO serves `Range` / 206)
+- `GET /videos/:publicId/download` — 302 to a presigned GET with `Content-Disposition: attachment`
+- `GET /channels/:channelId/videos` — newest first; anonymous sees only `ready`, owner sees all statuses
+
+**Owner mutations:** `PATCH /videos/:publicId`, `DELETE /videos/:publicId` (204; aborts in-flight multipart)
+
+**Status cycle:** `draft` → `processing` → `ready` | `error`. Unique URL via `public_id` (nanoid). Worker writes thumbnail at `{channelId}/{publicId}/thumb.jpg`.
+
+Decisions and plan: `docs/decisions/technical-decisions-phase-03-videos.md`, `docs/phases/phase-03-videos/`.
 
 ## Working Principles
 

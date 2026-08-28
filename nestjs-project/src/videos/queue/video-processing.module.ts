@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import queueConfig from '../../config/queue.config';
 import { VIDEO_PROCESSING_QUEUE } from './video-processing.constants';
 import { VideoProcessingProducer } from './video-processing.producer';
 
@@ -12,7 +13,7 @@ import { VideoProcessingProducer } from './video-processing.producer';
 @Module({
   imports: [
     BullModule.forRootAsync({
-      imports: [ConfigModule],
+      imports: [ConfigModule.forFeature(queueConfig)],
       useFactory: (configService: ConfigService) => ({
         connection: {
           host: configService.get<string>('queue.redisHost'),

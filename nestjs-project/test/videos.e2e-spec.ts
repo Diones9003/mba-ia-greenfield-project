@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument, @typescript-eslint/require-await */
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
@@ -5,7 +6,6 @@ import { App } from 'supertest/types';
 import { DataSource } from 'typeorm';
 import { AppModule } from '../src/app.module';
 import { AuthService } from '../src/auth/auth.service';
-import { Channel } from '../src/channels/entities/channel.entity';
 import { DomainExceptionFilter } from '../src/common/filters/domain-exception.filter';
 import { ValidationExceptionFilter } from '../src/common/filters/validation-exception.filter';
 import { cleanAllTables } from '../src/test/create-test-data-source';
@@ -191,5 +191,130 @@ describe('Videos upload (e2e)', () => {
       .expect((res) => {
         expect(res.body.error).toBe('FILE_TOO_LARGE');
       });
+  });
+
+  it('GET /videos/:publicId returns 409 VIDEO_NOT_READY for a draft', async () => {
+    const email = 'getter@example.com';
+    const token = await registerConfirmLogin(email);
+    const channelId = await channelIdFor(email);
+
+    const initiate = await request(app.getHttpServer())
+      .post('/videos')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        title: 'draft get',
+        channelId,
+        fileSize: 64,
+        mimeType: 'video/mp4',
+      })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .get(`/videos/${initiate.body.publicId}`)
+      .expect(409)
+      .expect((res) => {
+        expect(res.body.error).toBe('VIDEO_NOT_READY');
+      });
+  });
+
+  it('GET /channels/:channelId/videos returns ready videos for anonymous callers', async () => {
+    const email = 'lister@example.com';
+    await registerConfirmLogin(email);
+    const channelId = await channelIdFor(email);
+
+    await dataSource.query(
+      `INSERT INTO videos (
+        public_id, title, status, channel_id, storage_key, mime_type
+      ) VALUES ($1, $2, $3, $4, $5, $6)`,
+      [
+        'listready12ab',
+        'Listed',
+        'ready',
+        channelId,
+        'chan/list/source',
+        'video/mp4',
+      ],
+    );
+    await dataSource.query(
+      `INSERT INTO videos (
+        public_id, title, status, channel_id, storage_key, mime_type
+      ) VALUES ($1, $2, $3, $4, $5, $6)`,
+      [
+        'listdraft12ab',
+        'Hidden',
+        'draft',
+        channelId,
+        'chan/draft/source',
+        'video/mp4',
+      ],
+    );
+
+    const res = await request(app.getHttpServer())
+      .get(`/channels/${channelId}/videos`)
+      .expect(200);
+
+    expect(res.body).toHaveLength(1);
+    expect(res.body[0].publicId).toBe('listready12ab');
+  });
+
+  it('PATCH /videos/:publicId updates title for the owner and 403 for a stranger', async () => {
+    const email = 'patcher@example.com';
+    const token = await registerConfirmLogin(email);
+    const channelId = await channelIdFor(email);
+
+    await dataSource.query(
+      `INSERT INTO videos (
+        public_id, title, status, channel_id, storage_key, mime_type
+      ) VALUES ($1, $2, $3, $4, $5, $6)`,
+      [
+        'patchme12abcd',
+        'Old',
+        'ready',
+        channelId,
+        'chan/patch/source',
+        'video/mp4',
+      ],
+    );
+
+    await request(app.getHttpServer())
+      .patch('/videos/patchme12abcd')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ title: 'New title' })
+      .expect(200)
+      .expect((res) => {
+        expect(res.body.title).toBe('New title');
+      });
+
+    const stranger = await registerConfirmLogin('stranger@example.com');
+    await request(app.getHttpServer())
+      .patch('/videos/patchme12abcd')
+      .set('Authorization', `Bearer ${stranger}`)
+      .send({ title: 'Hijack' })
+      .expect(403);
+  });
+
+  it('DELETE /videos/:publicId returns 204 for the owner', async () => {
+    const email = 'deleter@example.com';
+    const token = await registerConfirmLogin(email);
+    const channelId = await channelIdFor(email);
+
+    await dataSource.query(
+      `INSERT INTO videos (
+        public_id, title, status, channel_id, storage_key, mime_type
+      ) VALUES ($1, $2, $3, $4, $5, $6)`,
+      [
+        'deleteme12abc',
+        'Gone',
+        'ready',
+        channelId,
+        'chan/del/source',
+        'video/mp4',
+      ],
+    );
+
+    await request(app.getHttpServer())
+      .delete('/videos/deleteme12abc')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(204);
   });
 });
